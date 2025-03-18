@@ -102,7 +102,6 @@ declare -a available_metrics=(
   "network_out:Network Out (bytes/s):Outgoing network traffic rate"
   "temperature:CPU Temperature (°C):Temperature of the CPU if available"
   "uptime:System Uptime (seconds):How long the system has been running"
-  "boot_time:System Boot Time:When the system was last booted (Unix timestamp)"
   "swap_usage:Swap Usage (%):Percentage of swap space currently in use"
   "disk_io:Disk I/O Operations (IOPS):Total disk I/O operations per second"
   "disk_read:Disk Read (ops/s):Disk read operations per second"
@@ -114,7 +113,6 @@ declare -a available_metrics=(
   "entropy:System Entropy:Available entropy in the system's random pool"
   "context_switches:Context Switches (per sec):Rate of CPU context switches"
   "interrupts:Interrupts (per sec):Rate of hardware interrupts"
-  "kernel_version:Kernel Version:Linux kernel version currently running"
 )
 
 # Function to display checkbox menu for metric selection
@@ -588,12 +586,6 @@ get_uptime() {
   cat /proc/uptime | awk '{printf "%.2f", $1}'
 }
 
-# Function to get system boot time - return as a string
-get_boot_time() {
-  # Return boot time as a string to avoid type issues
-  uptime -s | tr -d '\n'
-}
-
 # Function to get swap usage - ensure it returns a floating point value
 get_swap_usage() {
   free | grep Swap | awk '{if ($2 > 0) printf "%.2f", $3/$2 * 100.0; else print "0.0"}'
@@ -699,11 +691,6 @@ get_interrupts() {
   else
     echo "0.0"
   fi
-}
-
-# Function to get kernel version
-get_kernel_version() {
-  uname -r
 }
 
 # Variables for network monitoring
@@ -869,9 +856,6 @@ test_metrics() {
       uptime)
         value=$(get_uptime 2>/dev/null) || value="error"
         ;;
-      boot_time)
-        value=$(get_boot_time 2>/dev/null) || value="error"
-        ;;
       swap_usage)
         value=$(get_swap_usage 2>/dev/null) || value="error"
         ;;
@@ -908,9 +892,6 @@ test_metrics() {
       interrupts)
         value=$(get_interrupts 2>/dev/null) || value="error"
         ;;
-      kernel_version)
-        value=$(get_kernel_version 2>/dev/null) || value="error"
-        ;;
       *)
         value="error"
         ;;
@@ -923,17 +904,9 @@ test_metrics() {
     else
       echo "OK"
       
-      # Format the value for JSON
-      if [ "$metric" = "boot_time" ] || [ "$metric" = "kernel_version" ]; then
-        # These are strings, so they need quotes
-        if [[ ! "$value" == \"* ]]; then
-          value="\"$value\""
-        fi
-      else
-        # Ensure numeric values are properly formatted
-        if ! [[ "$value" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
-          value="0.0"
-        fi
+      # Ensure numeric values are properly formatted
+      if ! [[ "$value" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+        value="0.0"
       fi
       
       # Add to test JSON
@@ -1112,11 +1085,6 @@ while true; do
           value="0.0"
         fi
         ;;
-      boot_time)
-        # This is a string, so it needs quotes
-        raw_value=$(get_boot_time)
-        value="\"$raw_value\""
-        ;;
       swap_usage)
         raw_value=$(get_swap_usage)
         # Ensure it's a valid number
@@ -1212,11 +1180,6 @@ while true; do
         else
           value="0.0"
         fi
-        ;;
-      kernel_version)
-        # This is a string, so it needs quotes
-        raw_value=$(get_kernel_version)
-        value="\"$raw_value\""
         ;;
       *)
         value="0.0"
