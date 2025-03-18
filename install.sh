@@ -91,11 +91,8 @@ fi
 # Available metrics to collect with detailed descriptions
 declare -a available_metrics=(
   "cpu_usage:Overall CPU Usage (%):Measures the total CPU utilization across all cores"
-  "cpu_cores:Individual CPU Core Usage:Provides usage percentage for each CPU core separately"
   "ram_usage:RAM Usage (%):Percentage of total RAM currently in use"
-  "ram_detailed:Detailed Memory Stats:Provides detailed memory information (free, cached, buffers)"
   "disk_usage:Root Disk Usage (%):Percentage of root partition (/) space used"
-  "disk_all:All Partitions Usage:Usage percentage for all mounted disk partitions"
   "load_average_1m:Load Average (1 min):System load average over the last 1 minute"
   "load_average_5m:Load Average (5 min):System load average over the last 5 minutes"
   "load_average_15m:Load Average (15 min):System load average over the last 15 minutes"
@@ -103,7 +100,6 @@ declare -a available_metrics=(
   "zombie_processes:Zombie Process Count:Number of zombie processes (terminated but not reaped)"
   "network_in:Network In (bytes/s):Incoming network traffic rate"
   "network_out:Network Out (bytes/s):Outgoing network traffic rate"
-  "network_errors:Network Errors:Count of network errors and dropped packets"
   "temperature:CPU Temperature (°C):Temperature of the CPU if available"
   "uptime:System Uptime (seconds):How long the system has been running"
   "boot_time:System Boot Time:When the system was last booted (Unix timestamp)"
@@ -119,7 +115,6 @@ declare -a available_metrics=(
   "context_switches:Context Switches (per sec):Rate of CPU context switches"
   "interrupts:Interrupts (per sec):Rate of hardware interrupts"
   "kernel_version:Kernel Version:Linux kernel version currently running"
-  "battery:Battery Status:Battery capacity and charging status (if applicable)"
 )
 
 # Function to display checkbox menu for metric selection
@@ -711,22 +706,6 @@ get_kernel_version() {
   uname -r
 }
 
-# Function to get battery status - improved formatting
-get_battery() {
-  # Try multiple battery locations
-  for bat in /sys/class/power_supply/BAT*; do
-    if [ -d "$bat" ]; then
-      local capacity=$(cat "$bat/capacity" 2>/dev/null || echo 0)
-      local status=$(cat "$bat/status" 2>/dev/null || echo "Unknown")
-      echo "{\"capacity\":$capacity,\"status\":\"$status\"}"
-      return
-    fi
-  done
-  
-  # No battery found
-  echo "{\"capacity\":0.0,\"status\":\"N/A\"}"
-}
-
 # Variables for network monitoring
 NETWORK_RX_PREV=0
 NETWORK_TX_PREV=0
@@ -855,20 +834,11 @@ test_metrics() {
       cpu_usage)
         value=$(get_cpu_usage 2>/dev/null) || value="error"
         ;;
-      cpu_cores)
-        value=$(get_cpu_cores 2>/dev/null) || value="error"
-        ;;
       ram_usage)
         value=$(get_ram_usage 2>/dev/null) || value="error"
         ;;
-      ram_detailed)
-        value=$(get_ram_detailed 2>/dev/null) || value="error"
-        ;;
       disk_usage)
         value=$(get_disk_usage 2>/dev/null) || value="error"
-        ;;
-      disk_all)
-        value=$(get_disk_all 2>/dev/null) || value="error"
         ;;
       load_average_1m)
         value=$(get_load_average_1m 2>/dev/null) || value="error"
@@ -892,9 +862,6 @@ test_metrics() {
       network_out)
         get_network_stats 2>/dev/null
         value=$NETWORK_OUT
-        ;;
-      network_errors)
-        value=$(get_network_errors 2>/dev/null) || value="error"
         ;;
       temperature)
         value=$(get_temperature 2>/dev/null) || value="error"
@@ -944,9 +911,6 @@ test_metrics() {
       kernel_version)
         value=$(get_kernel_version 2>/dev/null) || value="error"
         ;;
-      battery)
-        value=$(get_battery 2>/dev/null) || value="error"
-        ;;
       *)
         value="error"
         ;;
@@ -965,9 +929,6 @@ test_metrics() {
         if [[ ! "$value" == \"* ]]; then
           value="\"$value\""
         fi
-      elif [ "$metric" = "cpu_cores" ] || [ "$metric" = "ram_detailed" ] || [ "$metric" = "disk_all" ] || [ "$metric" = "network_errors" ] || [ "$metric" = "battery" ]; then
-        # These are JSON objects, so no quotes needed
-        :
       else
         # Ensure numeric values are properly formatted
         if ! [[ "$value" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
@@ -1054,10 +1015,6 @@ while true; do
           value="0.0"
         fi
         ;;
-      cpu_cores)
-        value=$(get_cpu_cores)
-        # This is a JSON object, so no quotes needed
-        ;;
       ram_usage)
         raw_value=$(get_ram_usage)
         # Ensure it's a valid number
@@ -1067,10 +1024,6 @@ while true; do
           value="0.0"
         fi
         ;;
-      ram_detailed)
-        value=$(get_ram_detailed)
-        # This is a JSON object, so no quotes needed
-        ;;
       disk_usage)
         raw_value=$(get_disk_usage)
         # Ensure it's a valid number
@@ -1079,10 +1032,6 @@ while true; do
         else
           value="0.0"
         fi
-        ;;
-      disk_all)
-        value=$(get_disk_all)
-        # This is a JSON object, so no quotes needed
         ;;
       load_average_1m)
         raw_value=$(get_load_average_1m)
@@ -1144,10 +1093,6 @@ while true; do
         else
           value="0.0"
         fi
-        ;;
-      network_errors)
-        value=$(get_network_errors)
-        # This is a JSON object, so no quotes needed
         ;;
       temperature)
         raw_value=$(get_temperature)
@@ -1272,10 +1217,6 @@ while true; do
         # This is a string, so it needs quotes
         raw_value=$(get_kernel_version)
         value="\"$raw_value\""
-        ;;
-      battery)
-        value=$(get_battery)
-        # This is a JSON object, so no quotes needed
         ;;
       *)
         value="0.0"
