@@ -995,6 +995,38 @@ test_metrics() {
   fi
 }
 
+# Function to send metrics to the API
+send_metrics() {
+  local json="$1"
+  
+  # Debug: Print the payload being sent
+  echo "DEBUG - Sending payload:"
+  echo "$json"
+  
+  # Send data to telemetry endpoint and capture response
+  # Using X-API-Key header for authentication
+  local response=$(curl -s -w "\n%{http_code}" -X POST "$API_ENDPOINT" \
+    -H "Content-Type: application/json" \
+    -H "X-API-Key: $API_KEY" \
+    -d "$json")
+  
+  # Extract HTTP status code
+  local status_code=$(echo "$response" | tail -n1)
+  
+  # Debug: Print the response
+  echo "DEBUG - Response (HTTP $status_code):"
+  echo "$(echo "$response" | head -n -1)"
+  
+  # Log if there's an error
+  if [ "$status_code" != "200" ]; then
+    echo "Error sending metrics: HTTP $status_code" >&2
+    echo "Response: $(echo "$response" | head -n -1)" >&2
+    return 1
+  fi
+  
+  return 0
+}
+
 # Main monitoring loop
 while true; do
   # Get current timestamp in ISO format
