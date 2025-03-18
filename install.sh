@@ -434,8 +434,6 @@ SELECTED_METRICS=(__SELECTED_METRICS__)
 # Get hostname for ship_id
 HOSTNAME=$(hostname)
 
-# Update the following metric collection functions to ensure accuracy and proper formatting:
-
 # Function to collect CPU usage - more reliable method without sed
 get_cpu_usage() {
   # Use awk directly instead of sed to avoid errors
@@ -530,6 +528,29 @@ get_disk_all() {
   echo "$result"
 }
 
+# Function to collect load average values - ensure they return floating point values
+get_load_average_1m() {
+  cat /proc/loadavg | awk '{printf "%.6f", $1}'
+}
+
+get_load_average_5m() {
+  cat /proc/loadavg | awk '{printf "%.6f", $2}'
+}
+
+get_load_average_15m() {
+  cat /proc/loadavg | awk '{printf "%.6f", $3}'
+}
+
+# Function to count processes
+get_processes() {
+  ps aux | wc -l | awk '{printf "%.1f", $1}'
+}
+
+# Function to count zombie processes
+get_zombie_processes() {
+  ps aux | grep -c 'Z' | awk '{printf "%.1f", $1}'
+}
+
 # Function to collect network errors and dropped packets - improved formatting
 get_network_errors() {
   local interface=$(ip route | grep default | awk '{print $5}' | head -n1)
@@ -567,6 +588,127 @@ get_temperature() {
   fi
 }
 
+# Function to get uptime in seconds - ensure it returns a floating point value
+get_uptime() {
+  cat /proc/uptime | awk '{printf "%.2f", $1}'
+}
+
+# Function to get system boot time - return as a string
+get_boot_time() {
+  # Return boot time as a string to avoid type issues
+  uptime -s | tr -d '\n'
+}
+
+# Function to get swap usage - ensure it returns a floating point value
+get_swap_usage() {
+  free | grep Swap | awk '{if ($2 > 0) printf "%.2f", $3/$2 * 100.0; else print "0.0"}'
+}
+
+# Function to get open file descriptors
+get_open_files() {
+  if command -v lsof >/dev/null 2>&1; then
+    lsof 2>/dev/null | wc -l | awk '{printf "%.1f", $1}' || echo "0.0"
+  else
+    echo "0.0"
+  fi
+}
+
+# Function to get TCP connection count
+get_tcp_connections() {
+  if command -v netstat >/dev/null 2>&1; then
+    netstat -ant 2>/dev/null | grep ESTABLISHED | wc -l | awk '{printf "%.1f", $1}' || echo "0.0"
+  elif command -v ss >/dev/null 2>&1; then
+    ss -t state established 2>/dev/null | wc -l | awk '{printf "%.1f", ($1 > 1) ? $1-1 : 0}' || echo "0.0"
+  else
+    echo "0.0"
+  fi
+}
+
+# Function to get UDP connection count
+get_udp_connections() {
+  if command -v netstat >/dev/null 2>&1; then
+    netstat -anu 2>/dev/null | grep -v "^Active" | wc -l | awk '{printf "%.1f", $1}' || echo "0.0"
+  elif command -v ss >/dev/null 2>&1; then
+    ss -u 2>/dev/null | wc -l | awk '{printf "%.1f", ($1 > 1) ? $1-1 : 0}' || echo "0.0"
+  else
+    echo "0.0"
+  fi
+}
+
+# Function to get logged in users count
+get_logged_users() {
+  who | wc -l | awk '{printf "%.1f", $1}'
+}
+
+# Function to get system entropy
+get_entropy() {
+  if [ -f /proc/sys/kernel/random/entropy_avail ]; then
+    cat /proc/sys/kernel/random/entropy_avail | awk '{printf "%.1f", $1}'
+  else
+    echo "0.0"
+  fi
+}
+
+# Variables for context switches and interrupts
+CONTEXT_SWITCHES_PREV=0
+INTERRUPTS_PREV=0
+STAT_TIMESTAMP_PREV=0
+
+# Function to get context switches per second
+get_context_switches() {
+  if [ -f /proc/stat ]; then
+    local ctxt=$(grep "ctxt" /proc/stat | awk '{print $2}')
+    local timestamp=$(date +%s)
+    
+    if [ $STAT_TIMESTAMP_PREV -ne 0 ]; then
+      local time_diff=$((timestamp - STAT_TIMESTAMP_PREV))
+      if [ $time_diff -gt 0 ]; then
+        local rate=$(( (ctxt - CONTEXT_SWITCHES_PREV) / time_diff ))
+        CONTEXT_SWITCHES_PREV=$ctxt
+        echo $(printf "%.2f" $rate)
+      else
+        echo "0.0"
+      fi
+    else
+      CONTEXT_SWITCHES_PREV=$ctxt
+      echo "0.0"
+    fi
+    
+    STAT_TIMESTAMP_PREV=$timestamp
+  else
+    echo "0.0"
+  fi
+}
+
+# Function to get interrupts per second
+get_interrupts() {
+  if [ -f /proc/stat ]; then
+    local intr=$(grep "intr" /proc/stat | awk '{print $2}')
+    local timestamp=$(date +%s)
+    
+    if [ $STAT_TIMESTAMP_PREV -ne 0 ]; then
+      local time_diff=$((timestamp - STAT_TIMESTAMP_PREV))
+      if [ $time_diff -gt 0 ]; then
+        local rate=$(( (intr - INTERRUPTS_PREV) / time_diff ))
+        INTERRUPTS_PREV=$intr
+        echo $(printf "%.2f" $rate)
+      else
+        echo "0.0"
+      fi
+    else
+      INTERRUPTS_PREV=$intr
+      echo "0.0"
+    fi
+  else
+    echo "0.0"
+  fi
+}
+
+# Function to get kernel version
+get_kernel_version() {
+  uname -r
+}
+
 # Function to get battery status - improved formatting
 get_battery() {
   # Try multiple battery locations
@@ -583,76 +725,10 @@ get_battery() {
   echo "{\"capacity\":0.0,\"status\":\"N/A\"}"
 }
 
-# Function to send metrics to the API
-send_metrics() {
-  local json="$1"
-  
-  # Send data to telemetry endpoint and capture response
-  # Using X-API-Key header for authentication
-  local response=$(curl -s -w "\n%{http_code}" -X POST "$API_ENDPOINT" \
-    -H "Content-Type: application/json" \
-    -H "X-API-Key: $API_KEY" \
-    -d "$json")
-  
-  # Extract HTTP status code
-  local status_code=$(echo "$response" | tail -n1)
-  
-  # Log if there's an error
-  if [ "$status_code" != "200" ]; then
-    echo "Error sending metrics: HTTP $status_code" >&2
-    echo "Response: $(echo "$response" | head -n -1)" >&2
-    return 1
-  fi
-  
-  return 0
-}
-
-# Update the following functions to ensure they return proper DOUBLE PRECISION values:
-
-# Function to collect CPU usage - ensure it returns a floating point value
-#get_cpu_usage() {
-#  top -bn1 | grep "Cpu(s)" | awk '{print 100.0-$8}'
-#}
-
-# Function to collect RAM usage - ensure it returns a floating point value
-#get_ram_usage() {
-#  free | grep Mem | awk '{print $3/$2 * 100.0}'
-#}
-
-# Function to collect disk usage - ensure it returns a floating point value
-#get_disk_usage() {
-#  df -h / | grep / | awk '{print $5}' | tr -d '%' | awk '{printf "%.2f", $1}'
-#}
-
-# Function to collect load average values - ensure they return floating point values
-get_load_average_1m() {
-  cat /proc/loadavg | awk '{printf "%.6f", $1}'
-}
-
-get_load_average_5m() {
-  cat /proc/loadavg | awk '{printf "%.6f", $2}'
-}
-
-get_load_average_15m() {
-  cat /proc/loadavg | awk '{printf "%.6f", $3}'
-}
-
-# Function to get uptime in seconds - ensure it returns a floating point value
-get_uptime() {
-  cat /proc/uptime | awk '{printf "%.2f", $1}'
-}
-
-# Function to get swap usage - ensure it returns a floating point value
-get_swap_usage() {
-  free | grep Swap | awk '{if ($2 > 0) printf "%.2f", $3/$2 * 100.0; else print "0.0"}'
-}
-
 # Variables for network monitoring
 NETWORK_RX_PREV=0
 NETWORK_TX_PREV=0
 TIMESTAMP_PREV=0
-
-# In the main monitoring loop, update the network and disk I/O stats processing:
 
 # Update network stats processing
 get_network_stats() {
@@ -761,6 +837,186 @@ get_disk_io_stats() {
   fi
 }
 
+# Function to test all metrics before sending
+test_metrics() {
+  local failed_metrics=()
+  local json_data="["
+  
+  echo "Testing selected metrics..."
+  
+  # Test each selected metric
+  for metric in "${SELECTED_METRICS[@]}"; do
+    echo -n "Testing $metric... "
+    
+    # Try to collect the metric
+    case $metric in
+      cpu_usage)
+        value=$(get_cpu_usage 2>/dev/null) || value="error"
+        ;;
+      cpu_cores)
+        value=$(get_cpu_cores 2>/dev/null) || value="error"
+        ;;
+      ram_usage)
+        value=$(get_ram_usage 2>/dev/null) || value="error"
+        ;;
+      ram_detailed)
+        value=$(get_ram_detailed 2>/dev/null) || value="error"
+        ;;
+      disk_usage)
+        value=$(get_disk_usage 2>/dev/null) || value="error"
+        ;;
+      disk_all)
+        value=$(get_disk_all 2>/dev/null) || value="error"
+        ;;
+      load_average_1m)
+        value=$(get_load_average_1m 2>/dev/null) || value="error"
+        ;;
+      load_average_5m)
+        value=$(get_load_average_5m 2>/dev/null) || value="error"
+        ;;
+      load_average_15m)
+        value=$(get_load_average_15m 2>/dev/null) || value="error"
+        ;;
+      processes)
+        value=$(get_processes 2>/dev/null) || value="error"
+        ;;
+      zombie_processes)
+        value=$(get_zombie_processes 2>/dev/null) || value="error"
+        ;;
+      network_in)
+        get_network_stats 2>/dev/null
+        value=$NETWORK_IN
+        ;;
+      network_out)
+        get_network_stats 2>/dev/null
+        value=$NETWORK_OUT
+        ;;
+      network_errors)
+        value=$(get_network_errors 2>/dev/null) || value="error"
+        ;;
+      temperature)
+        value=$(get_temperature 2>/dev/null) || value="error"
+        ;;
+      uptime)
+        value=$(get_uptime 2>/dev/null) || value="error"
+        ;;
+      boot_time)
+        value=$(get_boot_time 2>/dev/null) || value="error"
+        ;;
+      swap_usage)
+        value=$(get_swap_usage 2>/dev/null) || value="error"
+        ;;
+      disk_io)
+        get_disk_io_stats 2>/dev/null
+        value=$DISK_IO
+        ;;
+      disk_read)
+        get_disk_io_stats 2>/dev/null
+        value=$DISK_READ
+        ;;
+      disk_write)
+        get_disk_io_stats 2>/dev/null
+        value=$DISK_WRITE
+        ;;
+      open_files)
+        value=$(get_open_files 2>/dev/null) || value="error"
+        ;;
+      tcp_connections)
+        value=$(get_tcp_connections 2>/dev/null) || value="error"
+        ;;
+      udp_connections)
+        value=$(get_udp_connections 2>/dev/null) || value="error"
+        ;;
+      logged_users)
+        value=$(get_logged_users 2>/dev/null) || value="error"
+        ;;
+      entropy)
+        value=$(get_entropy 2>/dev/null) || value="error"
+        ;;
+      context_switches)
+        value=$(get_context_switches 2>/dev/null) || value="error"
+        ;;
+      interrupts)
+        value=$(get_interrupts 2>/dev/null) || value="error"
+        ;;
+      kernel_version)
+        value=$(get_kernel_version 2>/dev/null) || value="error"
+        ;;
+      battery)
+        value=$(get_battery 2>/dev/null) || value="error"
+        ;;
+      *)
+        value="error"
+        ;;
+    esac
+    
+    # Check if the metric was collected successfully
+    if [ "$value" = "error" ]; then
+      echo "FAILED"
+      failed_metrics+=("$metric")
+    else
+      echo "OK"
+      
+      # Format the value for JSON
+      if [ "$metric" = "boot_time" ] || [ "$metric" = "kernel_version" ]; then
+        # These are strings, so they need quotes
+        if [[ ! "$value" == \"* ]]; then
+          value="\"$value\""
+        fi
+      elif [ "$metric" = "cpu_cores" ] || [ "$metric" = "ram_detailed" ] || [ "$metric" = "disk_all" ] || [ "$metric" = "network_errors" ] || [ "$metric" = "battery" ]; then
+        # These are JSON objects, so no quotes needed
+        :
+      else
+        # Ensure numeric values are properly formatted
+        if ! [[ "$value" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+          value="0.0"
+        fi
+      fi
+      
+      # Add to test JSON
+      json_data+="{\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")\",\"ship_id\":\"$HOSTNAME\",\"cargo_id\":\"$metric\",\"value\":$value},"
+    fi
+  done
+  
+  # Remove trailing comma and close JSON array
+  json_data=${json_data%,}
+  json_data+="]"
+  
+  # Return results
+  if [ ${#failed_metrics[@]} -gt 0 ]; then
+    echo "The following metrics failed to collect: ${failed_metrics[*]}"
+    return 1
+  else
+    echo "All metrics collected successfully!"
+    echo "$json_data" > /tmp/test_metrics.json
+    return 0
+  fi
+}
+
+# Function to send metrics to the API
+send_metrics() {
+  local json="$1"
+  
+  # Send data to telemetry endpoint and capture response
+  # Using X-API-Key header for authentication
+  local response=$(curl -s -w "\n%{http_code}" -X POST "$API_ENDPOINT" \
+    -H "Content-Type: application/json" \
+    -H "X-API-Key: $API_KEY" \
+    -d "$json")
+  
+  # Extract HTTP status code
+  local status_code=$(echo "$response" | tail -n1)
+  
+  # Log if there's an error
+  if [ "$status_code" != "200" ]; then
+    echo "Error sending metrics: HTTP $status_code" >&2
+    echo "Response: $(echo "$response" | head -n -1)" >&2
+    return 1
+  fi
+  
+  return 0
+}
+
 # Main monitoring loop
 while true; do
   # Get current timestamp in ISO format
@@ -775,9 +1031,6 @@ while true; do
   # Prepare JSON payload
   JSON="["
   
-  # Update the main monitoring loop to handle special cases for JSON objects and strings
-  # In the main monitoring loop, modify the case statement to handle special data types:
-
   # Add metrics based on selection
   for metric in "${SELECTED_METRICS[@]}"; do
     case $metric in
@@ -812,10 +1065,10 @@ while true; do
         value=$(get_load_average_15m)
         ;;
       processes)
-        value=$(ps aux | wc -l | awk '{printf "%.1f", $1}')
+        value=$(get_processes)
         ;;
       zombie_processes)
-        value=$(ps aux | grep -c 'Z' | awk '{printf "%.1f", $1}')
+        value=$(get_zombie_processes)
         ;;
       network_in)
         value=$NETWORK_IN
@@ -834,7 +1087,7 @@ while true; do
         value=$(get_uptime)
         ;;
       boot_time)
-        # Ensure boot_time is a string if it's a timestamp
+        # Ensure boot_time is a string
         value="\"$(get_boot_time)\""
         ;;
       swap_usage)
@@ -850,25 +1103,25 @@ while true; do
         value=$DISK_WRITE
         ;;
       open_files)
-        value=$(get_open_files | awk '{printf "%.1f", $1}')
+        value=$(get_open_files)
         ;;
       tcp_connections)
-        value=$(get_tcp_connections | awk '{printf "%.1f", $1}')
+        value=$(get_tcp_connections)
         ;;
       udp_connections)
-        value=$(get_udp_connections | awk '{printf "%.1f", $1}')
+        value=$(get_udp_connections)
         ;;
       logged_users)
-        value=$(get_logged_users | awk '{printf "%.1f", $1}')
+        value=$(get_logged_users)
         ;;
       entropy)
-        value=$(get_entropy | awk '{printf "%.1f", $1}')
+        value=$(get_entropy)
         ;;
       context_switches)
-        value=$(get_context_switches | awk '{printf "%.2f", $1}')
+        value=$(get_context_switches)
         ;;
       interrupts)
-        value=$(get_interrupts | awk '{printf "%.2f", $1}')
+        value=$(get_interrupts)
         ;;
       kernel_version)
         # This is a string, so it needs quotes
@@ -881,15 +1134,11 @@ while true; do
       *)
         value="0.0"
         ;;
-  esac
-  
-  # Add to JSON payload - ensure boot_time is properly formatted
-  if [ "$metric" = "boot_time" ]; then
+    esac
+    
+    # Add to JSON payload
     JSON+="{ \"time\": \"$TIMESTAMP\", \"ship_id\": \"$HOSTNAME\", \"cargo_id\": \"$metric\", \"value\": $value },"
-  else
-    JSON+="{ \"time\": \"$TIMESTAMP\", \"ship_id\": \"$HOSTNAME\", \"cargo_id\": \"$metric\", \"value\": $value },"
-  fi
-done
+  done
 
   # Remove trailing comma and close JSON array
   JSON=${JSON%,}
@@ -931,6 +1180,15 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
+# Test all metrics before sending to API
+echo -e "${YELLOW}Testing all selected metrics before installation...${RESET}"
+/usr/local/bin/harbor-monitor.sh test_metrics
+
+if [ $? -ne 0 ]; then
+  echo -e "${YELLOW}Some metrics failed to collect. Continuing with installation anyway.${RESET}"
+  echo -e "${YELLOW}You may want to check the logs after installation for more details.${RESET}"
+fi
+
 # Send a test data point to verify connectivity
 echo -e "${YELLOW}Sending test data point to verify API connectivity...${RESET}"
 
@@ -939,7 +1197,7 @@ HOSTNAME=$(hostname)
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
 
 # Create test JSON payload
-TEST_JSON="[{\"time\": \"$TIMESTAMP\", \"ship_id\": \"$HOSTNAME\", \"cargo_id\": \"test\", \"value\": 1}]"
+TEST_JSON="[{\"time\": \"$TIMESTAMP\", \"ship_id\": \"$HOSTNAME\", \"cargo_id\": \"test\", \"value\": 1.0}]"
 
 # Send test data with X-API-Key header
 RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$API_ENDPOINT" \
@@ -976,12 +1234,6 @@ else
   echo -e "${YELLOW}The service has not been started due to this error.${RESET}"
   exit 1
 fi
-}
-
-# Function to get system boot time
-get_boot_time() {
-  # Return as a string to avoid type issues
-  uptime -s
 }
 
 # Run the main menu
