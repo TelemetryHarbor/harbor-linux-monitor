@@ -960,9 +960,9 @@ test_metrics() {
 send_metrics() {
   local json="$1"
   
-  # Debug: Print the payload being sent
+  # Debug: Print the payload being sent with clear formatting
   echo "DEBUG - Sending payload:"
-  echo "$json"
+  echo "$json" | jq . || echo "$json"
   
   # Send data to telemetry endpoint and capture response
   # Using X-API-Key header for authentication
