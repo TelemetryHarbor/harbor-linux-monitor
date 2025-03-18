@@ -41,23 +41,18 @@ Before starting, ensure you have:
      - `Grafana Password`
 
 ### 2. Install the Monitoring Agent
-
-#### Option 1: One-line Installation (Recommended)
-``` bash
-curl -sSL https://raw.githubusercontent.com/TelemetryHarbor/harbor-linux-monitor/main/install.sh | sudo bash
-```
-
-#### Option 2: Manual Installation
 1. Download the installation script:
 ``` bash
 curl -sSL -o install-monitoring.sh https://raw.githubusercontent.com/TelemetryHarbor/harbor-linux-monitor/refs/heads/main/install.sh
 ```
-3. Make it executable:
+2. Make it executable:
+``` bash
 chmod +x install-monitoring.sh
-
-4. Run the installation script with root privileges:
+```
+3. Run the installation script with root privileges:
+``` bash
 sudo ./install-monitoring.sh
-
+```
 ### 3. Configuration During Installation
 
 During installation, you'll be prompted to:
@@ -113,31 +108,38 @@ The monitoring agent can collect the following metrics:
 After installation, the monitoring service runs automatically. You can manage it using:
 
 # Check service status
+``` bash
 systemctl status harbor-monitor
-
+```
 # View logs
+``` bash
 journalctl -u harbor-monitor -f
-
+```
 # Stop the service
+``` bash
 systemctl stop harbor-monitor
-
+```
 # Start the service
+``` bash
 systemctl start harbor-monitor
-
+```
 # Disable automatic startup
+``` bash
 systemctl disable harbor-monitor
-
+```
 # Enable automatic startup
+``` bash
 systemctl enable harbor-monitor
-
+```
 ## Uninstalling
 
 To uninstall the monitoring agent:
 
 1. Run the installation script again:
+``` bash
 sudo ./install-monitoring.sh
-
-2. Select the "Uninstall Harbor Monitor" option from the menu.
+```
+3. Select the "Uninstall Harbor Monitor" option from the menu.
 
 ## Troubleshooting
 
