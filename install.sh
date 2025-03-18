@@ -436,10 +436,10 @@ HOSTNAME=$(hostname)
 
 # Update the following metric collection functions to ensure accuracy and proper formatting:
 
-# Function to collect CPU usage - more reliable method
+# Function to collect CPU usage - more reliable method without sed
 get_cpu_usage() {
-  # Use a more reliable method that works across different Linux distributions
-  top -bn1 | grep "Cpu(s)" | sed "s/.*, *$$[0-9.]*$$%* id.*/\1/" | awk '{print 100.0-$1}'
+  # Use awk directly instead of sed to avoid errors
+  top -bn1 | grep "Cpu(s)" | awk '{print 100.0-$8}'
 }
 
 # Function to collect individual CPU core usage - improved reliability
@@ -834,7 +834,8 @@ while true; do
         value=$(get_uptime)
         ;;
       boot_time)
-        value=$(get_boot_time | awk '{printf "%.1f", $1}')
+        # Ensure boot_time is a string if it's a timestamp
+        value="\"$(get_boot_time)\""
         ;;
       swap_usage)
         value=$(get_swap_usage)
@@ -880,10 +881,14 @@ while true; do
       *)
         value="0.0"
         ;;
-    esac
+  esac
   
-    # Add to JSON payload
+  # Add to JSON payload - ensure boot_time is properly formatted
+  if [ "$metric" = "boot_time" ]; then
     JSON+="{ \"time\": \"$TIMESTAMP\", \"ship_id\": \"$HOSTNAME\", \"cargo_id\": \"$metric\", \"value\": $value },"
+  else
+    JSON+="{ \"time\": \"$TIMESTAMP\", \"ship_id\": \"$HOSTNAME\", \"cargo_id\": \"$metric\", \"value\": $value },"
+  fi
 done
 
   # Remove trailing comma and close JSON array
@@ -971,6 +976,12 @@ else
   echo -e "${YELLOW}The service has not been started due to this error.${RESET}"
   exit 1
 fi
+}
+
+# Function to get system boot time
+get_boot_time() {
+  # Return as a string to avoid type issues
+  uptime -s
 }
 
 # Run the main menu
