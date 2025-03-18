@@ -5,7 +5,7 @@ Easily collect and visualize system metrics from your Linux servers and devices 
 **_Repo Link:_** https://github.com/TelemetryHarbor/harbor-linux-monitor
 
 ## Features
-- Collect over 30 different system metrics including CPU, memory, disk, network, and more
+- Collect over 24 different system metrics including CPU, memory, disk, network, and more
 - Customizable metric selection to fit your monitoring needs
 - Configurable sampling rates from 1 second to 5 minutes
 - Automatic service installation with systemd integration
