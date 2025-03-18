@@ -699,6 +699,8 @@ get_interrupts() {
       INTERRUPTS_PREV=$intr
       echo "0.0"
     fi
+    
+    STAT_TIMESTAMP_PREV=$timestamp
   else
     echo "0.0"
   fi
@@ -993,30 +995,6 @@ test_metrics() {
   fi
 }
 
-# Function to send metrics to the API
-send_metrics() {
-  local json="$1"
-  
-  # Send data to telemetry endpoint and capture response
-  # Using X-API-Key header for authentication
-  local response=$(curl -s -w "\n%{http_code}" -X POST "$API_ENDPOINT" \
-    -H "Content-Type: application/json" \
-    -H "X-API-Key: $API_KEY" \
-    -d "$json")
-  
-  # Extract HTTP status code
-  local status_code=$(echo "$response" | tail -n1)
-  
-  # Log if there's an error
-  if [ "$status_code" != "200" ]; then
-    echo "Error sending metrics: HTTP $status_code" >&2
-    echo "Response: $(echo "$response" | head -n -1)" >&2
-    return 1
-  fi
-  
-  return 0
-}
-
 # Main monitoring loop
 while true; do
   # Get current timestamp in ISO format
@@ -1033,99 +1011,235 @@ while true; do
   
   # Add metrics based on selection
   for metric in "${SELECTED_METRICS[@]}"; do
+    # Get the value based on the metric type
     case $metric in
       cpu_usage)
-        value=$(get_cpu_usage)
+        raw_value=$(get_cpu_usage)
+        # Ensure it's a valid number
+        if [[ "$raw_value" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+          value="$raw_value"
+        else
+          value="0.0"
+        fi
         ;;
       cpu_cores)
         value=$(get_cpu_cores)
         # This is a JSON object, so no quotes needed
         ;;
       ram_usage)
-        value=$(get_ram_usage)
+        raw_value=$(get_ram_usage)
+        # Ensure it's a valid number
+        if [[ "$raw_value" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+          value="$raw_value"
+        else
+          value="0.0"
+        fi
         ;;
       ram_detailed)
         value=$(get_ram_detailed)
         # This is a JSON object, so no quotes needed
         ;;
       disk_usage)
-        value=$(get_disk_usage)
+        raw_value=$(get_disk_usage)
+        # Ensure it's a valid number
+        if [[ "$raw_value" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+          value="$raw_value"
+        else
+          value="0.0"
+        fi
         ;;
       disk_all)
         value=$(get_disk_all)
         # This is a JSON object, so no quotes needed
         ;;
       load_average_1m)
-        value=$(get_load_average_1m)
+        raw_value=$(get_load_average_1m)
+        # Ensure it's a valid number
+        if [[ "$raw_value" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+          value="$raw_value"
+        else
+          value="0.0"
+        fi
         ;;
       load_average_5m)
-        value=$(get_load_average_5m)
+        raw_value=$(get_load_average_5m)
+        # Ensure it's a valid number
+        if [[ "$raw_value" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+          value="$raw_value"
+        else
+          value="0.0"
+        fi
         ;;
       load_average_15m)
-        value=$(get_load_average_15m)
+        raw_value=$(get_load_average_15m)
+        # Ensure it's a valid number
+        if [[ "$raw_value" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+          value="$raw_value"
+        else
+          value="0.0"
+        fi
         ;;
       processes)
-        value=$(get_processes)
+        raw_value=$(get_processes)
+        # Ensure it's a valid number
+        if [[ "$raw_value" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+          value="$raw_value"
+        else
+          value="0.0"
+        fi
         ;;
       zombie_processes)
-        value=$(get_zombie_processes)
+        raw_value=$(get_zombie_processes)
+        # Ensure it's a valid number
+        if [[ "$raw_value" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+          value="$raw_value"
+        else
+          value="0.0"
+        fi
         ;;
       network_in)
-        value=$NETWORK_IN
+        # Ensure it's a valid number
+        if [[ "$NETWORK_IN" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+          value="$NETWORK_IN"
+        else
+          value="0.0"
+        fi
         ;;
       network_out)
-        value=$NETWORK_OUT
+        # Ensure it's a valid number
+        if [[ "$NETWORK_OUT" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+          value="$NETWORK_OUT"
+        else
+          value="0.0"
+        fi
         ;;
       network_errors)
         value=$(get_network_errors)
         # This is a JSON object, so no quotes needed
         ;;
       temperature)
-        value=$(get_temperature)
+        raw_value=$(get_temperature)
+        # Ensure it's a valid number
+        if [[ "$raw_value" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+          value="$raw_value"
+        else
+          value="0.0"
+        fi
         ;;
       uptime)
-        value=$(get_uptime)
+        raw_value=$(get_uptime)
+        # Ensure it's a valid number
+        if [[ "$raw_value" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+          value="$raw_value"
+        else
+          value="0.0"
+        fi
         ;;
       boot_time)
-        # Ensure boot_time is a string
-        value="\"$(get_boot_time)\""
+        # This is a string, so it needs quotes
+        raw_value=$(get_boot_time)
+        value="\"$raw_value\""
         ;;
       swap_usage)
-        value=$(get_swap_usage)
+        raw_value=$(get_swap_usage)
+        # Ensure it's a valid number
+        if [[ "$raw_value" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+          value="$raw_value"
+        else
+          value="0.0"
+        fi
         ;;
       disk_io)
-        value=$DISK_IO
+        # Ensure it's a valid number
+        if [[ "$DISK_IO" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+          value="$DISK_IO"
+        else
+          value="0.0"
+        fi
         ;;
       disk_read)
-        value=$DISK_READ
+        # Ensure it's a valid number
+        if [[ "$DISK_READ" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+          value="$DISK_READ"
+        else
+          value="0.0"
+        fi
         ;;
       disk_write)
-        value=$DISK_WRITE
+        # Ensure it's a valid number
+        if [[ "$DISK_WRITE" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+          value="$DISK_WRITE"
+        else
+          value="0.0"
+        fi
         ;;
       open_files)
-        value=$(get_open_files)
+        raw_value=$(get_open_files)
+        # Ensure it's a valid number
+        if [[ "$raw_value" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+          value="$raw_value"
+        else
+          value="0.0"
+        fi
         ;;
       tcp_connections)
-        value=$(get_tcp_connections)
+        raw_value=$(get_tcp_connections)
+        # Ensure it's a valid number
+        if [[ "$raw_value" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+          value="$raw_value"
+        else
+          value="0.0"
+        fi
         ;;
       udp_connections)
-        value=$(get_udp_connections)
+        raw_value=$(get_udp_connections)
+        # Ensure it's a valid number
+        if [[ "$raw_value" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+          value="$raw_value"
+        else
+          value="0.0"
+        fi
         ;;
       logged_users)
-        value=$(get_logged_users)
+        raw_value=$(get_logged_users)
+        # Ensure it's a valid number
+        if [[ "$raw_value" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+          value="$raw_value"
+        else
+          value="0.0"
+        fi
         ;;
       entropy)
-        value=$(get_entropy)
+        raw_value=$(get_entropy)
+        # Ensure it's a valid number
+        if [[ "$raw_value" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+          value="$raw_value"
+        else
+          value="0.0"
+        fi
         ;;
       context_switches)
-        value=$(get_context_switches)
+        raw_value=$(get_context_switches)
+        # Ensure it's a valid number
+        if [[ "$raw_value" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+          value="$raw_value"
+        else
+          value="0.0"
+        fi
         ;;
       interrupts)
-        value=$(get_interrupts)
+        raw_value=$(get_interrupts)
+        # Ensure it's a valid number
+        if [[ "$raw_value" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+          value="$raw_value"
+        else
+          value="0.0"
+        fi
         ;;
       kernel_version)
         # This is a string, so it needs quotes
-        value="\"$(get_kernel_version)\""
+        raw_value=$(get_kernel_version)
+        value="\"$raw_value\""
         ;;
       battery)
         value=$(get_battery)
