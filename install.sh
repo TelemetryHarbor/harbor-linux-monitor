@@ -415,7 +415,7 @@ install_monitor() {
   echo -e "${YELLOW}Creating monitoring script...${RESET}"
   
   # Create the monitoring script
-  cat > /usr/local/bin/harbor-monitor.sh << 'EOF'
+cat > /usr/local/bin/harbor-monitor.sh << 'EOF'
 #!/bin/bash
 
 # Configuration will be injected here
@@ -961,6 +961,13 @@ send_metrics() {
   return 0
 }
 
+# Check for command line arguments - AFTER all functions are defined
+if [ "$1" = "test_metrics" ]; then
+  # Only run the test_metrics function and exit
+  test_metrics
+  exit $?
+fi
+
 # Main monitoring loop
 while true; do
   # Get current timestamp in ISO format
@@ -1234,7 +1241,9 @@ EOF
 echo -e "${YELLOW}Testing all selected metrics before installation...${RESET}"
 /usr/local/bin/harbor-monitor.sh test_metrics
 
-if [ $? -ne 0 ]; then
+# Check the return code from the test_metrics function
+TEST_RESULT=$?
+if [ $TEST_RESULT -ne 0 ]; then
   echo -e "${YELLOW}Some metrics failed to collect. Continuing with installation anyway.${RESET}"
   echo -e "${YELLOW}You may want to check the logs after installation for more details.${RESET}"
 fi
